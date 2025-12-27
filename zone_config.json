@@ -1,0 +1,45 @@
+{
+  "zones": {
+    "Zone-1": {
+      "blocks": ["1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "11", "12", "13"],
+      "description": "Zone 1 - Blocks 1 to 13",
+      "color": "#667eea"
+    },
+    "Zone-2": {
+      "blocks": ["9", "14", "15", "16", "17"],
+      "description": "Zone 2 - Block 9, Blocks 14-17",
+      "color": "#764ba2"
+    },
+    "Zone-3": {
+      "blocks": ["18", "19", "20", "21", "22", "23", "24"],
+      "description": "Zone 3 - Blocks 18 to 24",
+      "color": "#f093fb"
+    },
+    "Zone-4": {
+      "blocks": ["27", "28", "29", "30", "31", "32"],
+      "description": "Zone 4 - Blocks 27 to 32",
+      "color": "#4facfe"
+    },
+    "Zone-5": {
+      "blocks": ["46", "47", "48", "49"],
+      "description": "Zone 5 - Blocks 46 to 49",
+      "color": "#43e97b"
+    },
+    "Zone-6": {
+      "blocks": ["50", "51", "52", "53", "54", "55", "56", "57", "58", "59", "60", "61", "62", "63", "64"],
+      "description": "Zone 6 - Blocks 50 to 64",
+      "color": "#fa709a"
+    },
+    "Zone-7": {
+      "blocks": ["33", "34", "35", "36"],
+      "description": "Zone 7 - Blocks 33 to 36",
+      "color": "#fee140"
+    },
+    "Zone-8": {
+      "blocks": ["37", "38", "39", "40", "41"],
+      "description": "Zone 8 - Blocks 37 to 41",
+      "color": "#30b0fe"
+    }
+  },
+  "note": "Blocks may contain suffixes (a, b, c, d) which are automatically handled"
+}
