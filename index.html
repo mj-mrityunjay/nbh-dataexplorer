@@ -1,0 +1,174 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>BHRTOA Facility Management Analytics</title>
+    
+    <!-- Google Fonts for Modern Typography -->
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    
+    <!-- Libraries -->
+    <script src="https://cdn.plot.ly/plotly-2.27.0.min.js"></script>
+    <script src="https://cdn.sheetjs.com/xlsx-latest/package/dist/xlsx.full.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
+    
+    <!-- DataTables Dependencies -->
+    <script src="https://code.jquery.com/jquery-3.7.0.min.js"></script>
+    <link rel="stylesheet" href="https://cdn.datatables.net/1.13.6/css/jquery.dataTables.min.css">
+    <script src="https://cdn.datatables.net/1.13.6/js/jquery.dataTables.min.js"></script>
+    
+    <!-- Custom CSS -->
+    <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+    <div class="background-blobs">
+        <div class="blob blob-1"></div>
+        <div class="blob blob-2"></div>
+        <div class="blob blob-3"></div>
+    </div>
+
+    <div class="app-container" id="app-content">
+        <header class="glass-panel">
+            <div class="header-content">
+                <div>
+                    <h1>BHRTOA Data Explorer</h1>
+                    <p class="subtitle">Facility Management Analytics & Diagnostics</p>
+                </div>
+                <div class="header-actions">
+                    <button id="export-pdf-btn" class="btn btn-primary" style="display: none;">
+                        <svg viewBox="0 0 24 24" width="20" height="20" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
+                        Export to PDF
+                    </button>
+                </div>
+            </div>
+        </header>
+
+        <!-- Dynamic Content Area -->
+        <main>
+            <!-- Step 1: File Uploader -->
+            <section id="upload-section" class="glass-panel upload-zone">
+                <div class="upload-content">
+                    <svg class="upload-icon" viewBox="0 0 24 24" width="64" height="64" stroke="currentColor" stroke-width="1.5" fill="none" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="17 8 12 3 7 8"></polyline><line x1="12" y1="3" x2="12" y2="15"></line></svg>
+                    <h2>Upload Diagnostic Data</h2>
+                    <p>Drag and drop your Support Ticket CSV or Excel (.xlsx) files here.</p>
+                    <p class="hint">Your files never leave securely processed locally in your browser.</p>
+                    <input type="file" id="file-input" multiple accept=".csv, .xlsx, .xls" class="file-input-hidden">
+                    <button class="btn btn-primary mt-4" onclick="document.getElementById('file-input').click()">Browse Files</button>
+                </div>
+                <!-- Loading State during parsing -->
+                <div id="loading-overlay" class="overlay-hidden">
+                    <div class="spinner"></div>
+                    <p>Synthesizing insights...</p>
+                </div>
+            </section>
+
+            <!-- Error Banner -->
+            <div id="error-banner" class="alert alert-error hidden">
+                <span id="error-message"></span>
+            </div>
+
+            <!-- Filter Banner -->
+            <div id="active-filter-banner" class="filter-banner hidden">
+                <div>
+                    <span class="filter-text">Showing Data For:</span>
+                    <span id="filter-type-val" class="filter-val"></span>
+                </div>
+                <button id="reset-filter-btn" class="btn" style="background: rgba(255,255,255,0.1); border: 1px solid rgba(255,255,255,0.2);">Clear Filters</button>
+            </div>
+
+            <!-- Step 2: Dashboard Content (Hidden until data is loaded) -->
+            <div id="dashboard-section" class="hidden">
+            <!-- Metrics -->
+                <section class="glass-panel mb-6">
+                    <h2 class="section-title">Key Analytics Overview</h2>
+                    <div class="metrics-grid" id="metrics-container">
+                        <!-- Populated via JS -->
+                    </div>
+                </section>
+
+                <section class="glass-panel mb-6">
+                    <h2 class="section-title">Zone Diagnostics</h2>
+                    <div class="table-responsive">
+                        <table class="modern-table clickable-rows" id="zone-summary-table">
+                            <thead>
+                                <tr>
+                                    <th>Zone</th>
+                                    <th>Open</th>
+                                    <th>In Progress</th>
+                                    <th>On Hold</th>
+                                    <th>Resolved</th>
+                                    <th>Closed</th>
+                                    <th>Other</th>
+                                    <th>Total</th>
+                                    <th>% Share</th>
+                                </tr>
+                            </thead>
+                            <tbody id="zone-summary-body">
+                                <!-- Populated via JS -->
+                            </tbody>
+                        </table>
+                    </div>
+                    <div class="legend-box mt-4">
+                        <span class="legend-item"><span class="dot purple"></span> Other: AUTO_CLOSE, NOT_AN_ISSUE</span>
+                    </div>
+                </section>
+
+                <!-- Charts Area -->
+                <section class="charts-grid mb-6">
+                    <div class="glass-panel chart-wrapper"><div id="chart-status"></div></div>
+                    <div class="glass-panel chart-wrapper"><div id="chart-priority"></div></div>
+                    <div class="glass-panel chart-wrapper" style="grid-column: 1 / -1;"><div id="chart-timeline"></div></div>
+                    <div class="glass-panel chart-wrapper"><div id="chart-resolution-time"></div></div>
+                    <div class="glass-panel chart-wrapper"><div id="chart-categories"></div></div>
+                    <div class="glass-panel chart-wrapper"><div id="chart-top-blocks"></div></div>
+                    <div class="glass-panel chart-wrapper"><div id="chart-top-units"></div></div>
+                    <div class="glass-panel chart-wrapper" style="grid-column: 1 / -1;"><div id="chart-block-status"></div></div>
+                    <div class="glass-panel chart-wrapper"><div id="chart-zone-dist"></div></div>
+                    <div class="glass-panel chart-wrapper"><div id="chart-zone-status"></div></div>
+                    <!-- New Insights -->
+                    <div class="glass-panel chart-wrapper" style="grid-column: 1 / -1;"><div id="chart-resolution-trend"></div></div>
+                    
+                    <div class="glass-panel chart-wrapper"><div id="chart-aging"></div></div>
+                    <div class="glass-panel chart-wrapper"><div id="chart-heatmap"></div></div>
+                    <div class="glass-panel chart-wrapper" style="grid-column: 1 / -1;"><div id="chart-resolution-matrix"></div></div>
+                </section>
+
+                <!-- Data Table Area -->
+                <section class="glass-panel">
+                    <h2 class="section-title">Log Explorer</h2>
+                    <p class="text-muted mb-4">Granular view of all support tickets parsed for the selected timeframe.</p>
+                    <div class="table-responsive">
+                        <table id="tickets-table" class="display" style="width:100%">
+                            <thead>
+                                <tr>
+                                    <th>Ticket ID</th>
+                                    <th>Zone</th>
+                                    <th>Block</th>
+                                    <th>Unit</th>
+                                    <th>Category</th>
+                                    <th>Priority</th>
+                                    <th>Status</th>
+                                    <th>Created On</th>
+                                    <th>Resolved On</th>
+                                    <th>TTL (Days)</th>
+                                    <th>Created By</th>
+                                </tr>
+                            </thead>
+                            <!-- Populated via DataTables JS -->
+                        </table>
+                    </div>
+                </section>
+            </div>
+        </main>
+        
+        <footer>
+            <p>Built for BHRTOA • Fully Private • Local Processing</p>
+        </footer>
+    </div>
+
+    <!-- Scripts -->
+    <script src="js/dataProcessor.js"></script>
+    <script src="js/app.js"></script>
+</body>
+</html>

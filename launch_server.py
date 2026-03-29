@@ -14,7 +14,7 @@ import socket
 from urllib.parse import unquote
 
 PORT = 8000
-REPORT_FILE = 'report.html'
+REPORT_FILE = 'index.html'
 
 def is_port_available(port):
     """Check if a port is available"""
