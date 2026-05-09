@@ -57,7 +57,7 @@ function excelDateToJSDate(serial) {
         const d = new Date(serial);
         // Sometimes dates are in "DD-MM-YYYY HH:mm" format depending on locale, parsing can be tricky
         // This relies on browser standard parser.
-        return isNaN(d) ? null : d;
+        return isNaN(d.getTime()) ? null : d;
     }
     const utc_days  = Math.floor(serial - 25569);
     const utc_value = utc_days * 86400;                                        
