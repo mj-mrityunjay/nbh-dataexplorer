@@ -9,15 +9,22 @@ document.addEventListener('DOMContentLoaded', () => {
     const errorBanner = document.getElementById('error-banner');
     const errorMsg = document.getElementById('error-message');
     const exportBtn = document.getElementById('export-pdf-btn');
+    const exportJsonBtn = document.getElementById('export-json-btn');
+    const importJsonBtn = document.getElementById('import-json-btn');
+    const importJsonInput = document.getElementById('import-json-input');
     const filterBanner = document.getElementById('active-filter-banner');
     const filterTypeVal = document.getElementById('filter-type-val');
     const resetFilterBtn = document.getElementById('reset-filter-btn');
+    const addMoreFilesBtn = document.getElementById('add-more-files-btn');
+    const uploadHistory = document.getElementById('upload-history');
+    const uploadHistoryContent = document.getElementById('upload-history-content');
 
     // State
     let dataTable = null;
     let masterData = [];
     let currentData = [];
     let currentFilter = { key: null, val: null };
+    let currentSession = null;
 
     // --- Events ---
     
@@ -45,6 +52,11 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     });
 
+    // Add more files button
+    addMoreFilesBtn.addEventListener('click', () => {
+        fileInput.click();
+    });
+
     resetFilterBtn.addEventListener('click', () => {
         applyFilter(null, null);
     });
@@ -66,6 +78,61 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     });
 
+    // Export JSON data
+    const exportJsonBtn = document.getElementById('export-json-btn');
+    const importJsonBtn = document.getElementById('import-json-btn');
+    const importJsonInput = document.getElementById('import-json-input');
+
+    exportJsonBtn.addEventListener('click', async () => {
+        try {
+            setLoading(true);
+            await window.exportDataAsJSON(`NBH-Report-${new Date().toISOString().split('T')[0]}.json`);
+            showError(false);
+        } catch (err) {
+            console.error(err);
+            showError(true, err.message || "Failed to export data.");
+        } finally {
+            setLoading(false);
+        }
+    });
+
+    importJsonBtn.addEventListener('click', () => {
+        importJsonInput.click();
+    });
+
+    importJsonInput.addEventListener('change', async (e) => {
+        if (e.target.files.length) {
+            try {
+                setLoading(true);
+                showError(false);
+                const file = e.target.files[0];
+                const importedData = await window.importDataFromJSON(file);
+                
+                if (importedData && importedData.length > 0) {
+                    masterData = importedData;
+                    currentData = [...masterData];
+                    renderDashboard(currentData);
+                    
+                    dropZone.classList.add('hidden');
+                    dashboard.classList.remove('hidden');
+                    exportJsonBtn.style.display = 'inline-flex';
+                    exportBtn.style.display = 'inline-flex';
+                    importJsonBtn.style.display = 'inline-flex';
+                    
+                    showError(false);
+                } else {
+                    showError(true, "No valid data in the imported file.");
+                }
+            } catch (err) {
+                console.error(err);
+                showError(true, err.message || "Failed to import data.");
+            } finally {
+                setLoading(false);
+                importJsonInput.value = '';
+            }
+        }
+    });
+
     // --- Core Logic ---
 
     async function handleFiles(fileList) {
@@ -77,14 +144,36 @@ document.addEventListener('DOMContentLoaded', () => {
             const processedData = await window.readExcelFiles(files);
             
             if (processedData && processedData.length > 0) {
-                masterData = processedData;
+                // Create upload session
+                const fileNames = files.map(f => f.name);
+                const dateRange = window.UploadManager.extractDateRange(processedData);
+                
+                currentSession = await window.UploadManager.createSession(
+                    processedData, 
+                    fileNames, 
+                    dateRange
+                );
+                
+                // Show warning if overlapping
+                if (currentSession.warning) {
+                    showError(true, `⚠️ ${currentSession.warning}`);
+                }
+                
+                // Consolidate all sessions into master data
+                masterData = await window.UploadManager.consolidateAllSessions();
                 currentData = [...masterData];
                 
+                // Update UI
+                await updateUploadHistory();
                 renderDashboard(currentData);
                 
                 dropZone.classList.add('hidden');
                 dashboard.classList.remove('hidden');
                 exportBtn.style.display = 'inline-flex';
+                exportJsonBtn.style.display = 'inline-flex';
+                importJsonBtn.style.display = 'inline-flex';
+                addMoreFilesBtn.style.display = 'inline-flex';
+                uploadHistory.classList.remove('hidden');
             } else {
                 showError(true, "No valid data found in the provided files.");
             }
@@ -94,6 +183,39 @@ document.addEventListener('DOMContentLoaded', () => {
         } finally {
             setLoading(false);
             fileInput.value = '';
+        }
+    }
+
+    async function updateUploadHistory() {
+        try {
+            const summary = await window.UploadManager.getUploadSummary();
+            
+            if (summary.totalSessions === 0) {
+                uploadHistoryContent.innerHTML = '<p class="text-muted">No uploads yet</p>';
+                return;
+            }
+            
+            let html = `<div class="upload-sessions">
+                <p class="text-muted">Total: ${summary.totalTickets} tickets from ${summary.totalSessions} upload(s)</p>`;
+            
+            summary.dateRanges.forEach((range, idx) => {
+                const warningClass = range.warning ? 'warning' : '';
+                const warningText = range.warning ? `<div class="warning-badge">${range.warning}</div>` : '';
+                
+                html += `
+                    <div class="session-item ${warningClass}">
+                        <div class="session-date">📅 ${range.dateRange?.label || 'Unknown dates'}</div>
+                        <div class="session-meta">${range.fileCount} file(s) • ${range.dataCount} records</div>
+                        <div class="session-time">${new Date(range.uploadedAt).toLocaleString()}</div>
+                        ${warningText}
+                    </div>
+                `;
+            });
+            
+            html += '</div>';
+            uploadHistoryContent.innerHTML = html;
+        } catch (err) {
+            console.error('Error updating upload history:', err);
         }
     }
 
@@ -486,4 +608,53 @@ document.addEventListener('DOMContentLoaded', () => {
             }
         });
     }
+
+    // Initialize: Load consolidated data from all upload sessions
+    async function initializeApp() {
+        try {
+            // First, try to load from upload sessions (consolidated)
+            const consolidatedData = await window.UploadManager.consolidateAllSessions();
+            
+            if (consolidatedData && consolidatedData.length > 0) {
+                masterData = consolidatedData;
+                currentData = [...masterData];
+                
+                await updateUploadHistory();
+                renderDashboard(currentData);
+                
+                dropZone.classList.add('hidden');
+                dashboard.classList.remove('hidden');
+                exportBtn.style.display = 'inline-flex';
+                exportJsonBtn.style.display = 'inline-flex';
+                importJsonBtn.style.display = 'inline-flex';
+                addMoreFilesBtn.style.display = 'inline-flex';
+                uploadHistory.classList.remove('hidden');
+                
+                console.log(`✅ Loaded ${consolidatedData.length} tickets from ${(await window.UploadManager.getAllSessions()).length} session(s)`);
+                return;
+            }
+            
+            // Fallback: Try loading from old IndexedDB format (for backwards compatibility)
+            const savedData = await window.loadDataFromIndexedDB();
+            if (savedData && savedData.data && savedData.data.length > 0) {
+                masterData = savedData.data;
+                currentData = [...masterData];
+                renderDashboard(currentData);
+                
+                dropZone.classList.add('hidden');
+                dashboard.classList.remove('hidden');
+                exportBtn.style.display = 'inline-flex';
+                exportJsonBtn.style.display = 'inline-flex';
+                importJsonBtn.style.display = 'inline-flex';
+                
+                console.log('⚠️ Loaded previously saved data (old format). Please re-upload to use new session management.');
+            }
+        } catch (err) {
+            console.warn('Could not load saved data:', err);
+            // Silently fail - user will upload files normally
+        }
+    }
+
+    // Initialize app on load
+    initializeApp();
 });

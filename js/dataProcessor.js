@@ -53,21 +53,63 @@ function getZone(block) {
 // Helper to convert excel serial date to JS Date
 function excelDateToJSDate(serial) {
     if (!serial) return null;
+    
+    // Handle string dates with multiple formats
     if (typeof serial === 'string') {
-        const d = new Date(serial);
-        // Sometimes dates are in "DD-MM-YYYY HH:mm" format depending on locale, parsing can be tricky
-        // This relies on browser standard parser.
-        return isNaN(d.getTime()) ? null : d;
+        const trimmed = String(serial).trim();
+        if (!trimmed) return null;
+        
+        // Try common formats
+        const formats = [
+            /(\d{4})-(\d{2})-(\d{2})T/, // ISO format YYYY-MM-DD
+            /(\d{2})\/(\d{2})\/(\d{4})/, // DD/MM/YYYY
+            /(\d{4})\/(\d{2})\/(\d{2})/, // YYYY/MM/DD
+            /(\w+)\s+(\d{1,2}),?\s+(\d{4})/ // Month Day, Year
+        ];
+        
+        // Try standard Date parser first
+        const d = new Date(trimmed);
+        if (!isNaN(d.getTime())) {
+            return d;
+        }
+        
+        // If standard parser fails, return null to skip
+        console.warn('Could not parse date string:', trimmed);
+        return null;
     }
-    const utc_days  = Math.floor(serial - 25569);
-    const utc_value = utc_days * 86400;                                        
-    const date_info = new Date(utc_value * 1000);
-    const fractional_day = serial - Math.floor(serial) + 0.0000001;
-    let total_seconds = Math.floor(86400 * fractional_day);
-    const seconds = total_seconds % 60; total_seconds -= seconds;
-    const hours = Math.floor(total_seconds / (60 * 60));
-    const minutes = Math.floor(total_seconds / 60) % 60;
-    return new Date(date_info.getFullYear(), date_info.getMonth(), date_info.getDate(), hours, minutes, seconds);
+    
+    // Handle numeric (Excel serial) dates
+    if (typeof serial === 'number' && serial > 0) {
+        try {
+            const utc_days = Math.floor(serial - 25569);
+            const utc_value = utc_days * 86400;
+            const date_info = new Date(utc_value * 1000);
+            const fractional_day = serial - Math.floor(serial) + 0.0000001;
+            let total_seconds = Math.floor(86400 * fractional_day);
+            const seconds = total_seconds % 60;
+            total_seconds -= seconds;
+            const hours = Math.floor(total_seconds / (60 * 60));
+            const minutes = Math.floor(total_seconds / 60) % 60;
+            
+            const result = new Date(
+                date_info.getFullYear(),
+                date_info.getMonth(),
+                date_info.getDate(),
+                hours,
+                minutes,
+                seconds
+            );
+            
+            // Validate the date
+            if (isNaN(result.getTime())) return null;
+            return result;
+        } catch (err) {
+            console.warn('Error parsing numeric date:', serial, err);
+            return null;
+        }
+    }
+    
+    return null;
 }
 
 // Process the raw data from Worksheet
@@ -111,56 +153,94 @@ async function processSupportTickets(data) {
         // Find Zone
         const zone = getZone(block);
         
+        // Handle Status/State - use Ticket_State as primary, fallback to Status
+        // These fields contain similar information, prefer Ticket_State
+        const status = row['Ticket_State'] || row['Ticket_State_Label'] || 
+                      row['Status'] || row['Ticket_Status'] || '-';
+        
         return {
             Ticket_ID: row['Ticket_ID'] || row['Ticket ID'] || '-',
             Zone: zone,
             Block: block,
             Unit: unit,
-            Category: row['Category'] || '-',
-            Priority: row['Priority'] || '-',
-            Status: row['Status'] || '-',
+            Category: row['Category'] || row['Ticket_Category'] || '-',
+            Priority: row['Priority'] || row['Ticket_Priority'] || '-',
+            Status: status,
             CreatedOnStr: createdOn ? createdOn.toISOString().split('T')[0] : '-',
             CreatedOnDate: createdOn,
             ResolvedTimeStr: resolvedOn ? resolvedOn.toISOString().split('T')[0] : '-',
             ResolutionDays: resolution_time_days,
-            CreatedBy: row['Created_By'] || row['Created By'] || '-',
-            Rating: row['Rating'] || '-',
-            Description: row['Description'] || '',
-            Resolution: row['Resolution'] || '',
-            Comments: row['Comments'] || ''
+            CreatedBy: row['Created_By'] || row['Created By'] || row['Ticket_Created_By'] || '-',
+            Rating: row['Rating'] || row['Ticket_Rating'] || '-',
+            Description: row['Description'] || row['Ticket_Description'] || '',
+            Resolution: row['Resolution'] || row['Ticket_Resolution'] || '',
+            Comments: row['Comments'] || row['Comment'] || ''
         };
     });
     
     return processedData;
 }
 
-// Read File Function
+// Read File Function - Process all uploaded files
 window.readExcelFiles = async function(files) {
     let allData = [];
-    let foundSupportTickets = false;
+    let processedFiles = [];
+    let errors = [];
 
     for (let file of files) {
-        // Similar to Python logic, focus on files containing SUPPORT_TICKET
-        // Or if it's just one file, we try to parse it anyway.
-        if (file.name.includes('SUPPORT_TICKET') || files.length === 1) {
-            foundSupportTickets = true;
+        // Accept all Excel files, look for SUPPORT_TICKET files first, then process any file
+        const isExcelFile = file.name.match(/\.(xlsx?|xls)$/i);
+        const isSupportTicket = file.name.toUpperCase().includes('SUPPORT_TICKET') || 
+                               file.name.toUpperCase().includes('COMPLAINT') ||
+                               file.name.toUpperCase().includes('ADMIN_COMMENT') ||
+                               file.name.toUpperCase().includes('ESCALATION');
+        
+        if (isExcelFile || files.length === 1) {
             try {
                 const data = await file.arrayBuffer();
-                const workbook = XLSX.read(data, { type: 'array', cellDates: true });
-                // Take first sheet
-                const firstSheetName = workbook.SheetNames[0];
-                const worksheet = workbook.Sheets[firstSheetName];
-                // Convert to JSON
-                const json = XLSX.utils.sheet_to_json(worksheet, { defval: "" });
-                allData = allData.concat(json);
+                const workbook = XLSX.read(data, { 
+                    type: 'array', 
+                    cellDates: true,
+                    defval: ""
+                });
+                
+                // Try to find the best sheet (usually first with data)
+                let processedCount = 0;
+                for (let sheetName of workbook.SheetNames) {
+                    const worksheet = workbook.Sheets[sheetName];
+                    const json = XLSX.utils.sheet_to_json(worksheet, { defval: "" });
+                    
+                    if (json.length > 0) {
+                        allData = allData.concat(json);
+                        processedCount += json.length;
+                        processedFiles.push({
+                            name: file.name,
+                            sheet: sheetName,
+                            rows: json.length
+                        });
+                    }
+                }
+                
+                if (processedCount === 0) {
+                    errors.push(`${file.name}: No data rows found`);
+                }
             } catch (e) {
-                throw new Error(`Error reading file ${file.name}: ${e.message}`);
+                errors.push(`${file.name}: ${e.message}`);
             }
         }
     }
     
     if (allData.length === 0) {
-        throw new Error("No SUPPORT_TICKET files found and no data parsed. Please upload a valid NoBrokerHood Support Ticket export.");
+        const errorMsg = errors.length > 0 
+            ? `Error reading files:\n${errors.join('\n')}` 
+            : "No valid Excel files found. Please upload support ticket exports.";
+        throw new Error(errorMsg);
+    }
+    
+    console.log(`Processed ${processedFiles.length} file(s) with ${allData.length} total rows`);
+    
+    return await processSupportTickets(allData);
+};
     }
     
     return await processSupportTickets(allData);
